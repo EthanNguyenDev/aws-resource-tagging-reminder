@@ -1,0 +1,44 @@
+{
+    "Items": [
+        {
+            "ShouldSentEmail": False,
+            "ResourceKey": "test-lambda",
+            "CreatedDate": "2019-06-19T02: 13: 53",
+            "ResourceMetadata": {},
+            "EventId": "aec03047-1d1d-dfc6-133a-cadf88c2a4e7",
+            "ResourceType": "lambda",
+            "EmailSent": False,
+            "CreatorArn": "arn:aws:XXXX"
+        },
+        {
+            "ShouldSentEmail": False,
+            "ResourceKey": "test-bucket",
+            "CreatedDate": "2019-06-18T06: 30: 19",
+            "ResourceMetadata": {},
+            "EventId": "b723d5ce-2e65-571c-e6ef-86d0d8582603",
+            "ResourceType": "s3",
+            "EmailSent": False,
+            "CreatorArn": "arn:aws:YYYY"
+        },
+        {
+            "ShouldSentEmail": False,
+            "ResourceKey": "my-apigateway",
+            "CreatedDate": "2019-06-11T03: 20: 02",
+            "ResourceMetadata": {},
+            "EventId": "f3e9ea52-42be-29c1-5d1d-1dd991894ea5",
+            "ResourceType": "apigateway",
+            "EmailSent": False,
+            "CreatorArn": "arn:aws:ZXZZZ"
+        },
+        {
+            "ShouldSentEmail": False,
+            "ResourceKey": "test-kinesis",
+            "CreatedDate": "2019-06-19T02: 13: 13",
+            "ResourceMetadata": {},
+            "EventId": "5b4a18cc-3042-e7c2-3fac-ae8b8e31a628",
+            "ResourceType": "kinesis",
+            "EmailSent": False,
+            "CreatorArn": "arn:aws:ZXZZZ"
+        }
+    ]
+}

@@ -1,0 +1,57 @@
+<html>
+
+<head>
+    <style>
+        table {
+            font-family: arial, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        td,
+        th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+
+        thead tr:first-child {
+            background-color: #ff9d00;
+        }
+    </style>
+</head>
+
+<body>
+    <h3>We believe that you have created below resources without specifying PC-Code tag. Kindly go to AWS Console &
+        update it.</h3>
+
+
+    <table>
+        <thead>
+            <tr>
+                <th>AWS Account Id</th>
+                <th>Resource Name</th>
+                <th>Resource Type</th>
+                <th>Created Date</th>
+                <th>Creator</th>
+                <th>Remarks</th>
+            </tr>
+
+        </thead>
+        <tbody>
+            {{#each resources}}
+            <tr>
+                <td>{{ ../account_id }}</td>
+                <td>{{ ResourceKey }}</td>
+                <td>{{ ResourceType }}</td>
+                <td>{{ CreatedDate }}</td>
+                <th>{{ ../recipient_email }}</th>
+                <td>{{ ResourceMetadata}}</td>
+            </tr>
+            {{/each}}
+        </tbody>
+
+    </table>
+</body>
+
+</html>

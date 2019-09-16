@@ -1,0 +1,322 @@
+---
+#===============================================================================
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Application to send reminder to resource owner for provision without required tagging
+ 
+#==================================================
+# Metadata
+#==================================================
+Metadata:
+  License:
+    Description: |
+      Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+      Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+          http://aws.amazon.com/apache2.0/
+      or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+#==================================================
+# Mappings
+#==================================================
+Mappings:
+  Environment:
+    TagResource:
+      AppCode: "AWST"
+      PcCode: "269W"
+    "773642266546": # master account
+      LambdaS3Bucket: send-reminder-email-lambda-773642266546
+      LambdaTrackingName: track-resources
+      LambdaReminderName: reminder-untagged-resources
+      CwRuleForLambdaTracking: cwrule-master-tracking
+      CwRuleForLambdaReminder: cwrule-master-reminders
+    "615736039223": # Dev account 1
+      LambdaS3Bucket: send-reminder-email-lambda-615736039223
+      LambdaTrackingName: track-resources
+      LambdaReminderName: reminder-untagged-resources
+      CwRuleForLambdaTracking: cwrule-dev1-tracking
+      CwRuleForLambdaReminder: cwrule-dev1-reminders
+
+#==================================================
+# Parameters
+#==================================================
+# Parameters:
+#   ArtifactBaseUrl:
+#     Description: Base URL of where template files reside in S3
+#     Type: String
+
+#==================================================
+# Resources
+#==================================================
+Resources:
+  #==================================================
+  # Lambda function that is used to track resources provision via CloudTrail Event
+  #==================================================
+  LambdaTracking:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaExecutionRole
+      - LambdaCustomExecutionPolicy
+
+    Properties:
+      FunctionName: !FindInMap ["Environment" , !Ref "AWS::AccountId" , LambdaTrackingName ]
+      Description: Lambda function that is used to track resources provision via CloudTrail Event
+      Handler: lambda_function.lambda_handler
+      MemorySize: 128
+      # Role: !FindInMap ["Environment" , !Ref "AWS::AccountId" , LambdaTrackingIamRoleArn ]
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 30
+      Environment:
+        Variables:
+          USER_DELIMITER: ','
+          USER_LIST: 'pipeline,AutoScaling'
+      Tags:
+        - Key: "App-code"
+          Value: !FindInMap ["Environment" , "TagResource", "AppCode"]
+        - Key: "PC-code"
+          Value: !FindInMap ["Environment" , "TagResource", "PcCode"]
+      Code:
+        S3Bucket: !FindInMap ["Environment" , !Ref "AWS::AccountId", "LambdaS3Bucket"]
+        S3Key: !Join [ '', [ !FindInMap ["Environment" , !Ref "AWS::AccountId" , LambdaTrackingName ] , '.zip'] ]
+  #==================================================
+  # Lambda function to process reminders for untagged resources
+  #==================================================
+  LambdaReminder:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaExecutionRole
+      - LambdaCustomExecutionPolicy
+    Properties:
+      FunctionName: !FindInMap ["Environment" , !Ref "AWS::AccountId" , LambdaReminderName ]
+      Description: Lambda function to process reminders for untagged resources
+      Handler: lambda_function.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      # Role: !FindInMap ["Environment" , !Ref "AWS::AccountId" , LambdaReminderIamRoleArn ]
+      Runtime: python3.7
+      Timeout: 30
+      Environment:
+        Variables:
+          USER_DELIMITER: ','
+          USER_LIST: 'pipeline,AutoScaling'
+      Tags:
+        - Key: "App-code"
+          Value: !FindInMap ["Environment" , "TagResource", "AppCode"]
+        - Key: "PC-code"
+          Value: !FindInMap ["Environment" , "TagResource", "PcCode"]
+      Code:
+        S3Bucket: !FindInMap ["Environment" , !Ref "AWS::AccountId", "LambdaS3Bucket"]
+        S3Key: !Join [ '', [ !FindInMap ["Environment" , !Ref "AWS::AccountId" , LambdaReminderName ] , '.zip'] ]
+
+  #==================================================
+  # CloudWatch Event with custom Pattern to target LambdaTracking
+  #==================================================
+  TriggeredRuleForLambdaTracking:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !FindInMap ["Environment" , !Ref "AWS::AccountId" , CwRuleForLambdaTracking]
+      Description: Responds (Cloudtrail) change events
+      EventPattern:
+        detail:
+          eventSource:
+            - apigateway.amazonaws.com
+            - elasticloadbalancing.amazonaws.com
+            - dynamodb.amazonaws.com
+            - lambda.amazonaws.com
+            - rds.amazonaws.com
+            - redshift.amazonaws.com
+            - s3.amazonaws.com
+            - es.amazonaws.com
+            - elasticache.amazonaws.com
+            - kinesis.amazonaws.com
+            - kms.amazonaws.com
+          eventName:
+            - CreateTable
+            - CreateLoadBalancer
+            - CreateRestApi
+            - CreateFunction20150331
+            - CreateDBInstance
+            - CreateCluster
+            - CreateBucket
+            - CreateElasticsearchDomain
+            - CreateCacheCluster
+            - CreateReplicationGroup
+            - CreateStream
+            - CreateKey
+      State: ENABLED
+      Targets:
+        -
+          Arn: !GetAtt LambdaTracking.Arn
+          Id: TargetFunctionV1
+
+  #==================================================
+  # Permission that allows the CloudWatch service to execute LambdaTracking
+  #==================================================
+  CloudWatchInvokeLambdaTrackingPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      FunctionName: !Ref LambdaTracking
+      SourceArn: !GetAtt TriggeredRuleForLambdaTracking.Arn
+
+  
+  #==================================================
+  # CloudWatch Event to schedude LambdaReminder execution - 6PM everyday
+  #==================================================
+  TriggeredRuleForLambdaReminder:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !FindInMap ["Environment" , !Ref "AWS::AccountId" , CwRuleForLambdaReminder]
+      Description: Run 6pm every weekday
+      ScheduleExpression: cron(2 10 ? * 2-6 *)
+      State: ENABLED
+      Targets:
+        -
+          Arn: !GetAtt LambdaReminder.Arn
+          Id: TargetFunctionV1
+
+  #==================================================
+  # Permission that allows the CloudWatch service to execute LambdaReminder
+  #==================================================
+  CloudWatchInvokeLambdaReminderPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      FunctionName: !Ref LambdaReminder
+      SourceArn: !GetAtt TriggeredRuleForLambdaReminder.Arn 
+
+  #==================================================
+  # Custom Lambda Execution Role
+  #==================================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  
+  #==================================================
+  # Custom Lambda Execution Policy
+  #==================================================
+  LambdaCustomExecutionPolicy:
+    DependsOn:
+      - LambdaExecutionRole
+      - DDBTable
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Sid: AllowDescribeResourceTags
+            Effect: Allow
+            Action:
+              - iam:ListAccountAliases
+              - iam:ListUsers
+              - iam:GetAccountSummary
+              - es:ListTags
+              - es:Describe*
+              - elasticloadbalancing:Describe*
+              - ec2:Describe*
+              - redshift:Describe*
+              - rds:Describe*
+              - rds:ListTagsForResource
+              - dynamodb:Describe*
+              - dynamodb:List*
+              - kinesis:Get*
+              - kinesis:List*
+              - kinesis:Describe*
+              - s3:GetBucketTagging
+              - s3:GetObjectTagging
+              - elasticache:ListTagsForResource
+              - apigateway:GET
+              - kms:ListResourceTags
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - cloudwatch:Describe*
+              - cloudwatch:List*
+              - cloudwatch:Get*
+              - tag:GetResources
+            Resource: "*"
+          -
+            Sid: AllowAccessTrackingTbl
+            Effect: Allow
+            Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:UntagResource
+              - dynamodb:PutItem
+              - dynamodb:DeleteItem
+              - dynamodb:Scan
+              - dynamodb:Query
+              - dynamodb:UpdateGlobalTable
+              - dynamodb:UpdateItem
+              - dynamodb:TagResource
+              - dynamodb:DescribeTable
+              - dynamodb:DescribeGlobalTable
+              - dynamodb:GetItem
+              - dynamodb:UpdateTable
+              - dynamodb:GetRecords
+            Resource: !GetAtt DDBTable.Arn
+
+      PolicyName: DescribeResourceTags
+      Roles: 
+        - !Ref LambdaExecutionRole
+
+  #==================================================
+  # DynamoDB table for tracking
+  #==================================================
+  DDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: CloudTrailEventResourceTracking
+      Tags:
+        - Key: "App-code"
+          Value: !FindInMap ["Environment" , "TagResource", "AppCode"]
+        - Key: "PC-code"
+          Value: !FindInMap ["Environment" , "TagResource", "PcCode"]
+      AttributeDefinitions:
+        -
+          AttributeName: "EventId"
+          AttributeType: "S"
+        -
+          AttributeName: "ResourceKey"
+          AttributeType: "S"
+        -
+          AttributeName: "ResourceType"
+          AttributeType: "S"
+
+      KeySchema:
+        -
+          AttributeName: "ResourceKey"
+          KeyType: "HASH"
+        -
+          AttributeName: "ResourceType"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      
+      GlobalSecondaryIndexes:
+      - IndexName: EventIdIndex
+        KeySchema:
+        - AttributeName: EventId
+          KeyType: HASH
+        Projection:
+          ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        
